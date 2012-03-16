@@ -38,6 +38,8 @@
 #include <lib/gfxconsole.h>
 #include <lib/bootlinux.h>
 
+#include "iniconfig.h"
+
 typedef struct menu_entry
 {
 	char *title;
@@ -61,6 +63,67 @@ unsigned gfx_trans;
 #define BOOT_RECOVER 3
 #define BOOT_SHUTDOWN 4
 #define BOOT_DFU 5
+
+struct moboot_config {
+	unsigned int default_timeout;
+	char default_image[256];
+	char next_image[256];
+};
+
+static struct moboot_config mconfig = {
+	.default_timeout = 5,
+	.default_image = "",
+	//.next_image = {'C', 'y', 'a', 'n', 'o', 'g', 'e', 'n', 'M', 'o', 'd', '\0'},
+	.next_image = "",
+};
+
+static int
+read_config(const char *path, struct moboot_config *conf)
+{
+	filecookie fc;
+	struct file_stat stat;
+	char *content = NULL;
+	iniconfig_config_t *config;
+	iniconfig_section_t *sec;
+	iniconfig_entry_t *ent;
+
+	if(fs_open_file(path, &fc) < 0)
+		return -1;
+	if(fs_stat_file(fc, &stat) < 0)
+		return -1;
+	if(stat.size <= 0)
+		return -1;
+	content = malloc(stat.size);
+	if(fs_read_file(fc, content, 0, stat.size) < 0){
+		goto failed;
+	}
+
+	config = iniconfig_config_new(content, stat.size, (iniconfig_error_report_func_t)printf);
+	if(config == NULL){
+		goto failed;
+	}
+	foreach(config->section_list, sec, iniconfig_section_t){
+		if(!strcmp(sec->name, "moboot")){
+			foreach(sec->entry_list, ent, iniconfig_entry_t){
+				if(!strcmp(ent->name, "timeout")){
+					conf->default_timeout = atoui(ent->value);
+				}else if(!strcmp(ent->name, "default")){
+					strcpy(conf->default_image, ent->value);
+				}else if(!strcmp(ent->name, "next")){
+					strcpy(conf->next_image, ent->value);
+				}
+			}
+		}
+	}
+
+	iniconfig_config_free(config);
+	free(content);
+	return 1;
+
+failed:
+	free(content);
+	return -1;
+}
 
 void boot_splash()
 {
@@ -300,6 +363,13 @@ void moboot_init(const struct app_descriptor *app)
 	if (rv > 0) {
 		next_image[rv] = 0;
 		if (next_image[rv - 1] == '\n') next_image[rv - 1] = 0;
+	}
+
+	if(read_config("/boot/moboot.config", &mconfig) > 0){
+		/* overwrite configurations */
+		default_timeout = mconfig.default_timeout;
+		strcpy(default_image, mconfig.default_image);
+		strcpy(next_image, mconfig.next_image);
 	}
 
 	tile_sz = fs_load_file_mem("/boot/moboot.background.tga", &tile_ptr);

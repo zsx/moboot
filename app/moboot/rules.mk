@@ -4,3 +4,5 @@ INCLUDES += -I$(LOCAL_DIR)/include
 
 OBJS += \
 	$(LOCAL_DIR)/moboot.o \
+	$(LOCAL_DIR)/iniconfig_list.o \
+	$(LOCAL_DIR)/iniconfig.o
